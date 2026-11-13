@@ -831,7 +831,6 @@ function updateRemotes(dt) {
     r.yaw += dy * t;
     r.group.position.copy(r.pos);
     r.group.rotation.y = r.yaw + Math.PI;
-    r.hit.position.copy(r.pos); r.hit.position.y += 0.95;
     const spd = r.pos.distanceTo(r.targetPos);
     const w = performance.now() / 130;
     r.parts.legL.rotation.x = Math.sin(w) * Math.min(0.5, spd * 0.4);
@@ -923,7 +922,6 @@ function updateBot(b, dt, now) {
   // visuals
   b.group.position.copy(b.pos);
   b.group.rotation.y = b.yaw + Math.PI;
-  b.hit.position.copy(b.pos); b.hit.position.y += 0.95;
   b.targetPos.copy(b.pos);
   const w = now / 130;
   const moving = Math.hypot(b.vel.x, b.vel.z) > 0.5;

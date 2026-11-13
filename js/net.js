@@ -67,6 +67,7 @@ const Net = {
         break;
       case 'cp':       // runner checkpoint
         this._broadcast({ t: 'cp', from, level: m.level });
+        this.emit('msg', { t: 'cp', from, level: m.level }); // host (sniper) sees it too
         break;
       case 'reached': { // a runner made it to the roof — that runner wins the round
         const reason = 'A runner reached the roof';
