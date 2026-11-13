@@ -101,9 +101,10 @@ const Net = {
   },
 
   _broadcast(msg, exceptId = -1) {
+    if (typeof pushErr === 'function' && location.hash.includes('debug')) pushErr('bcast:' + msg.t);
     for (const [id, conn] of this.conns) {
       if (id === exceptId || id === 0) continue;
-      if (conn && conn.open) conn.send(msg);
+      if (conn && conn.open) { try { conn.send(msg); } catch (e) { if (typeof pushErr === 'function') pushErr('sendfail:' + e.message); } }
     }
   },
 
@@ -114,8 +115,10 @@ const Net = {
     if (c && c.open) c.send(msg);
   },
 
-  send(msg) { // host "send" = broadcast to clients
-    this._broadcast(msg);
+  // unified send: host broadcasts to all clients, client sends to host
+  send(msg) {
+    if (this.isHost) { this._broadcast(msg); return; }
+    if (this.conn && this.conn.open) this.conn.send(msg);
   },
 
   _hostLeft(id) {
@@ -153,6 +156,7 @@ const Net = {
 
   _wireClient(conn) {
     conn.on('data', d => {
+      if (typeof pushErr === 'function' && location.hash.includes('debug')) pushErr('rx:' + (d && d.t));
       if (d && d.t === 'roster') { this.roster = (d.ids || []).filter(i => i !== d.gone); }
       this.emit('msg', d);
     });
@@ -168,9 +172,6 @@ const Net = {
       p.on('error', e => rej(e));
     });
   },
-
-  // client→host send
-  send(obj) { if (this.conn && this.conn.open) this.conn.send(obj); },
 
   destroy() {
     try { this.conn && this.conn.close(); } catch {}

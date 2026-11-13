@@ -4,7 +4,7 @@ window.__err = [];
 function pushErr(s) {
   window.__err.push(s);
   const el = document.getElementById('errbox');
-  if (el) { el.textContent = window.__err.slice(-3).join(' | '); el.classList.remove('hidden'); }
+  if (el) { el.textContent = window.__err.slice(-8).join(' | '); el.classList.remove('hidden'); }
 }
 addEventListener('error', e => pushErr(String(e.message || e.error)));
 addEventListener('unhandledrejection', e => pushErr('rej:' + String(e.reason && e.reason.message || e.reason)));
@@ -785,6 +785,7 @@ function respawnLocal() {
 // ---------------- NET MESSAGE HANDLING ----------------
 Net.on('msg', m => {
   if (!m || !m.t) return;
+  if (location.hash.includes('debug')) pushErr('msg:' + m.t + (m.from != null ? ' f' + m.from : ''));
   switch (m.t) {
     case 'start': startGame(m.mode, m.time, m.role); break;
     case 'state': {
@@ -1551,10 +1552,12 @@ $('btnOfflineStart').onclick = () => {
 };
 
 $('btnStart').onclick = () => {
+  if (location.hash.includes('debug')) pushErr('btnStart ids=' + Net.ids().length);
   if (Net.ids().length < 2) return;
   AudioSys.ui();
   const role = hostMode === 'rooftop' ? 'sniper' : 'ffa';
   Net.send({ t: 'start', mode: hostMode, time: hostTime, role: hostMode === 'rooftop' ? 'runner' : 'ffa' });
+  if (location.hash.includes('debug')) pushErr('sent start');
   startGame(hostMode, hostTime, role);
 };
 
