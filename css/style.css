@@ -53,6 +53,7 @@ canvas.game { position:fixed; inset:0; display:block; }
 #minimap { position:absolute; top:14px; right:14px; border-radius:10px; border:1px solid #ffffff22; background:rgba(8,12,18,.7); }
 #interactHint { position:absolute; bottom:110px; left:50%; transform:translateX(-50%); font-size:14px; color:#fff; background:rgba(0,0,0,.5); padding:6px 14px; border-radius:6px; }
 #damageFlash { position:absolute; inset:0; background:radial-gradient(ellipse at center,transparent 40%,rgba(255,0,0,.45) 100%); opacity:0; transition:opacity .1s; }
+#dbg { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:11px; color:#7fd0ff99; font-family:monospace; }
 
 /* scope overlay — uses the ADS reference image */
 #scopeOverlay { position:absolute; inset:0; }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import Net from './net.js';
+import Net from './net.js?v=3';
 
 window.__err = [];
 addEventListener('error', e => window.__err.push(String(e.message || e.error)));
@@ -232,7 +232,7 @@ const MAT = {
 
 // ---------------- WORLD ----------------
 let colliders = [], shootables = [], mapGroup = null;
-let spawnPoints = [], checkpoints = [], stairStrip = null, roofArea = null;
+let spawnPoints = [], checkpoints = [], ramps = [], stairStrip = null, roofArea = null;
 
 function addBox(w, h, d, x, y, z, mat = MAT.wall, opts = {}) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -254,7 +254,7 @@ function groundPlane(size, color = 0x4c5a48) {
 function clearWorld() {
   if (mapGroup) { scene.remove(mapGroup); mapGroup.traverse(o => { o.geometry && o.geometry.dispose(); }); }
   mapGroup = new THREE.Group(); scene.add(mapGroup);
-  colliders = []; shootables = []; spawnPoints = []; checkpoints = [];
+  colliders = []; shootables = []; spawnPoints = []; checkpoints = []; ramps = [];
   stairStrip = null; roofArea = null;
 }
 
@@ -308,11 +308,11 @@ function buildRooftop() {
   groundPlane(320, 0x3d4a42);
 
   const BX = 0, W = 18, D = 18, FH = 3;
-  const xw = BX - W / 2;          // west edge = -9
-  const slabX0 = xw + 3;          // slabs start 3m in → stair strip x∈[-9,-6]
-  const slabW = W - 3;            // 15
+  const xw = BX - W / 2;          // west edge = -9 (wall occupies -9..-8)
+  const slabX0 = xw + 4;          // slabs start 4m in → stair strip x∈[-8,-5]
+  const slabW = W - 4;            // 14
   const slabCX = slabX0 + slabW / 2;
-  stairStrip = { x0: xw, x1: slabX0, z0: -D / 2, z1: D / 2 };
+  stairStrip = { x0: xw + 1, x1: slabX0, z0: -D / 2, z1: D / 2 };
 
   // ---------- SNIPER TOWER ----------
   const TX = -95;
@@ -360,7 +360,7 @@ function buildRooftop() {
   roofArea = { x0: xw, x1: BX + W / 2, z0: -D / 2, z1: D / 2, y: roofY };
 
   // checkpoints: positions on the stairs/floors in the strip
-  const IX = xw + 1.5; // stair center x = -7.5
+  const IX = xw + 2.5; // stair center x = -6.5
   checkpoints = [
     { pos: new THREE.Vector3(IX, 3.5, 0), level: 1 },
     { pos: new THREE.Vector3(IX, 6.5, 7), level: 2 },
@@ -368,31 +368,51 @@ function buildRooftop() {
     { pos: new THREE.Vector3(IX, 12.5, -7), level: 4 },
     { pos: new THREE.Vector3(IX, 15.5, 7), level: 5 },
   ];
-  spawnPoints.push({ pos: new THREE.Vector3(-6, 0.5, 0), yaw: Math.PI / 2 });   // runner A
-  spawnPoints.push({ pos: new THREE.Vector3(-4, 0.5, 5), yaw: Math.PI / 2 });   // runner B
+  spawnPoints.push({ pos: new THREE.Vector3(-4, 0.5, 0), yaw: Math.PI / 2 });   // runner A
+  spawnPoints.push({ pos: new THREE.Vector3(-2, 0.5, 5), yaw: Math.PI / 2 });   // runner B
 
-  // ---------- STAIRS in the west strip (switchback) ----------
-  function flight(x, z0, z1, y0, y1, width = 2.4) {
-    const len = Math.abs(z1 - z0);
-    const steps = Math.max(2, Math.ceil(Math.abs(y1 - y0) / 0.42));
-    const rise = (y1 - y0) / steps, run = len / steps;
-    for (let i = 0; i < steps; i++) {
-      const t = (i + 0.5) / steps;
-      const sz = z0 + (z1 - z0) * t;
-      const sy = y0 + rise * (i + 1);
-      const step = new THREE.Mesh(new THREE.BoxGeometry(width, 0.18, Math.abs(run) + 0.12), MAT.metal);
-      step.position.set(x, sy - 0.09, sz);
-      step.castShadow = step.receiveShadow = true;
-      mapGroup.add(step);
-      const ex = width / 2 + 0.05, ez = Math.abs(run) / 2 + 0.15;
-      colliders.push({ min: new THREE.Vector3(x - ex, sy - 0.18, sz - ez), max: new THREE.Vector3(x + ex, sy, sz + ez) });
-      shootables.push(step);
+  // ---------- STAIRS in the west strip: smooth switchback RAMPS ----------
+  // ramp along z: x center IX, width 3, from (z0,y0) to (z1,y1)
+  const rampMeshMat = new THREE.MeshStandardMaterial({ color: 0x4a545f, roughness: 0.6, metalness: 0.5 });
+  function ramp(z0, z1, y0, y1, x = IX, w = 3, underside = false) {
+    ramps.push({ x0: x - w / 2, x1: x + w / 2, zA: z0, yA: y0, zB: z1, yB: y1 });
+    // visual wedge — sort by z so rotation is uniform
+    const zLo = Math.min(z0, z1), zHi = Math.max(z0, z1);
+    const yLo = z0 < z1 ? y0 : y1, yHi = z0 < z1 ? y1 : y0;
+    const len = Math.hypot(zHi - zLo, yHi - yLo);
+    const slope = Math.atan2(yHi - yLo, zHi - zLo);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, len + 0.4), rampMeshMat);
+    m.position.set(x, (yLo + yHi) / 2 - 0.15, (zLo + zHi) / 2);
+    m.rotation.x = -slope;
+    m.castShadow = m.receiveShadow = true;
+    mapGroup.add(m);
+    shootables.push(m);
+    // underside blockers (only for the ground-level ramp): cap at head height
+    // so they stop ground-level walkers but never block ramps above
+    if (underside) {
+      const n = Math.ceil(Math.abs(z1 - z0) / 2);
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, zz = z0 + (z1 - z0) * t, sy = y0 + (y1 - y0) * t;
+        if (sy > 2.6) {
+          colliders.push({
+            min: new THREE.Vector3(x - w / 2, 0.5, zz - 1.2),
+            max: new THREE.Vector3(x + w / 2, 2.35, zz + 1.2),
+          });
+        }
+      }
+    }
+    // side rails (visual only)
+    for (const sx of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.9, len), MAT.wallDark);
+      rail.position.set(x + sx * (w / 2 + 0.05), (yLo + yHi) / 2 + 0.3, (zLo + zHi) / 2);
+      rail.rotation.x = -slope;
+      rail.castShadow = true; mapGroup.add(rail);
     }
   }
-  const zA = -D / 2 + 2, zB = D / 2 - 2; // -7 .. 7
-  flight(IX, zA, zB, 0.5, 6.5);            // F0: ground → lvl2
-  flight(IX, zB, zA, 6.5, 12.5);           // F1: lvl2 → lvl4
-  flight(IX, zA, zB, 12.5, roofY);         // F2: lvl4 → roof
+  const zA = -D / 2 + 1.5, zB = D / 2 - 1.5; // -7.5 .. 7.5
+  ramp(zA, zB, 0.5, 6.5, IX, 3, true);   // F0: ground → lvl2
+  ramp(zB, zA, 6.5, 12.5);               // F1: lvl2 → lvl4
+  ramp(zA, zB, 12.5, roofY);             // F2: lvl4 → roof
 
   // ---------- city filler ----------
   for (let i = 0; i < 12; i++) {
@@ -457,6 +477,19 @@ function stepBody(b, wishX, wishZ, jump, dt) {
   moveAxis('x', b.vel.x * dt, b);
   moveAxis('z', b.vel.z * dt, b);
   moveAxis('y', b.vel.y * dt, b);
+  // ramp surfaces act as ground (rooftop stairwell)
+  if (b.vel.y <= 0.01 && ramps.length) {
+    let best = null, bestD = 1e9;
+    for (const r of ramps) {
+      if (b.pos.x <= r.x0 || b.pos.x >= r.x1) continue;
+      const t = (b.pos.z - r.zA) / (r.zB - r.zA);
+      if (t < 0 || t > 1) continue;
+      const surf = r.yA + (r.yB - r.yA) * t;
+      const d = b.pos.y - surf;
+      if (d <= 0.35 && d >= -0.9 && Math.abs(d) < bestD) { bestD = Math.abs(d); best = surf; }
+    }
+    if (best != null) { b.pos.y = best; b.vel.y = 0; b.grounded = true; }
+  }
   b.pos.x = Math.max(-150, Math.min(150, b.pos.x));
   b.pos.z = Math.max(-150, Math.min(150, b.pos.z));
   if (b.pos.y < -5) { b.pos.y = -5; b.vel.y = 0; }
@@ -917,8 +950,17 @@ function updateBot(b, dt, now) {
 
   // integrate physics — ai.mx/mz is a ~unit world-space wish dir
   const ml = Math.hypot(ai.mx, ai.mz);
-  const spd = ml > 0.01 ? d.speed : 0;
-  stepBody(b, ml > 0.01 ? ai.mx / ml * spd : 0, ml > 0.01 ? ai.mz / ml * spd : 0, ai.jump, dt);
+  const isRunner = Game.mode === 'rooftop' && b.role === 'runner';
+  const spd = ml > 0.01 ? d.speed * (isRunner ? 0.42 : 1) : 0;
+  if (isRunner) {
+    // kinematic climb — no collision fighting on the stairwell
+    b._kx = ml > 0.01 ? ai.mx / ml * spd : 0;
+    b._kz = ml > 0.01 ? ai.mz / ml * spd : 0;
+    b._ky = BOT_WAYPOINTS[Math.min(ai.wp, BOT_WAYPOINTS.length - 1)].y;
+    botKinematic(b, dt);
+  } else {
+    stepBody(b, ml > 0.01 ? ai.mx / ml * spd : 0, ml > 0.01 ? ai.mz / ml * spd : 0, ai.jump, dt);
+  }
   ai.jump = false;
 
   // visuals
@@ -929,6 +971,13 @@ function updateBot(b, dt, now) {
   const moving = Math.hypot(b.vel.x, b.vel.z) > 0.5;
   b.parts.legL.rotation.x = moving ? Math.sin(w) * 0.5 : 0;
   b.parts.legR.rotation.x = moving ? -Math.sin(w) * 0.5 : 0;
+}
+
+// kinematic move for rooftop runner bots — follows waypoints, y eases to path height
+function botKinematic(b, dt) {
+  b.pos.x += b._kx * dt; b.pos.z += b._kz * dt;
+  b.pos.y += (b._ky - b.pos.y) * Math.min(1, dt * 3.5);
+  b.vel.set(b._kx, 0, b._kz); b.grounded = true;
 }
 
 // ---- FFA bot: hunt the player ----
@@ -1020,13 +1069,14 @@ function playerProxy() {
 
 // ---- Rooftop runner bot: climb the stairwell waypoints ----
 const BOT_WAYPOINTS = [
-  { x: -7.5, z: -7,  y: 0.5 },   // F0 start
-  { x: -7.5, z: 0,   y: 3.5 },   // cp1 mid F0
-  { x: -7.5, z: 7,   y: 6.5 },   // cp2 top F0
-  { x: -7.5, z: 0,   y: 9.5 },   // cp3 mid F1
-  { x: -7.5, z: -7,  y: 12.5 },  // cp4 top F1
-  { x: -7.5, z: 7,   y: 15.5 },  // cp5 top F2
-  { x: 0,    z: 0,   y: 15.5 },  // roof center → win
+  { x: -4,    z: -7,   y: 0.5 },   // inside building, south end
+  { x: -6.5,  z: -6,   y: 1.1 },   // strip entry, low end of ramp F0
+  { x: -6.5,  z: 0,    y: 3.5 },   // mid F0 (lvl1)
+  { x: -6.5,  z: 7.5,  y: 6.5 },   // top F0 (lvl2)
+  { x: -6.5,  z: 0,    y: 9.5 },   // mid F1 (lvl3)
+  { x: -6.5,  z: -7.5, y: 12.5 },  // top F1 (lvl4)
+  { x: -6.5,  z: 7.5,  y: 15.5 },  // top F2 (roof strip)
+  { x: 0,     z: 0,    y: 15.5 },  // roof center → win
 ];
 function updateBotRunner(b, dt, now) {
   const ai = b.ai, d = b.d;
@@ -1308,6 +1358,7 @@ function sendState() {
 
 // ---------------- MAIN LOOP ----------------
 let last = performance.now();
+let dbgT = 0;
 function loop() {
   requestAnimationFrame(loop);
   const now = performance.now();
@@ -1348,6 +1399,18 @@ function loop() {
     stateTimer += dt;
     if (Game.online && stateTimer > 0.066) { stateTimer = 0; sendState(); }
     if (Game.mode === '1v1') drawMinimap(dt);
+
+    // debug/spectate line (only with #debug in URL)
+    const dbgOn = location.hash.includes('debug');
+    dbgT += dt;
+    if (dbgOn && dbgT > 0.5) {
+      dbgT = 0;
+      const el = $('dbg');
+      el.classList.remove('hidden');
+      el.textContent = `pos ${player.pos.x.toFixed(0)},${player.pos.y.toFixed(0)},${player.pos.z.toFixed(0)} lvl${player.level}` +
+        (bots.length ? ' | bots ' + bots.map(b => `${b.id}:${b.pos.x.toFixed(0)},${b.pos.y.toFixed(0)},${b.pos.z.toFixed(0)} wp${b.ai.wp}${b.alive ? '' : '✝'}`).join(' ') : '') +
+        (remotes.size ? ' | remotes ' + [...remotes.keys()].join(',') : '');
+    }
   } else {
     const t = now / 10000;
     camera.position.set(Math.sin(t) * 40, 16, Math.cos(t) * 40);
