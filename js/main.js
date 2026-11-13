@@ -1,9 +1,13 @@
-import * as THREE from 'three';
-import Net from './net.js?v=3';
+/* global THREE, Net */
 
 window.__err = [];
-addEventListener('error', e => window.__err.push(String(e.message || e.error)));
-addEventListener('unhandledrejection', e => window.__err.push('rej:' + String(e.reason && e.reason.message || e.reason)));
+function pushErr(s) {
+  window.__err.push(s);
+  const el = document.getElementById('errbox');
+  if (el) { el.textContent = window.__err.slice(-3).join(' | '); el.classList.remove('hidden'); }
+}
+addEventListener('error', e => pushErr(String(e.message || e.error)));
+addEventListener('unhandledrejection', e => pushErr('rej:' + String(e.reason && e.reason.message || e.reason)));
 
 // ============================================================
 // ZNIPERS — sniper game (Three.js + PeerJS, up to 3 players)
@@ -215,6 +219,7 @@ addEventListener('resize', () => {
 });
 
 const texLoader = new THREE.TextureLoader();
+texLoader.crossOrigin = undefined; // allow file:// loading (no CORS attr)
 const playerTex = texLoader.load('assets/player.jpg');
 playerTex.colorSpace = THREE.SRGBColorSpace;
 const hipTex = texLoader.load('assets/sniper_hip.jpg');
@@ -676,7 +681,7 @@ function updateAmmoHUD() {
 
 function tryShoot() {
   const now = performance.now();
-  const cd = Game.mode === 'rooftop' && Game.role === 'sniper' ? 4000 : (Game.mode === '1v1' ? 1e9 : 1500);
+  const cd = Game.mode === 'rooftop' && Game.role === 'sniper' ? 4000 : (Game.mode === '1v1' ? 1200 : 1500);
   if (player.ammo <= 0 || now - player.lastShot < cd) return;
   player.lastShot = now; player.ammo--;
   AudioSys.shoot();
@@ -821,24 +826,25 @@ Net.on('msg', m => {
   }
 });
 
-Net.on('peer', ({ id }) => {
-  if (Game.state !== 'playing') {
-    const n = Net.ids().length;
-    $('btnStart').disabled = false;
-    $('btnStart').textContent = `START GAME (${n}/3)`;
-    $('netStatus').textContent = `${n - 1} player(s) in room — pick mode and START`;
-  }
-});
+function updateLobbyCount() {
+  const n = Net.ids().length;
+  const pc = $('playerCount');
+  pc.textContent = `👤 ${n}/3 players`;
+  pc.classList.toggle('full', n >= Net.MAX_PLAYERS);
+  const hw = $('hostWait');
+  hw.textContent = n < 2 ? 'Waiting for players to join…' : `${n - 1} player(s) in room — press START when ready`;
+  $('btnStart').disabled = n < 2;
+  $('btnStart').textContent = 'START GAME';
+  $('netStatus').textContent = '';
+}
+Net.on('peer', () => { if (Game.state !== 'playing') updateLobbyCount(); });
 Net.on('peerleft', ({ id }) => {
   if (id != null && remotes.has(id)) { scene.remove(remotes.get(id).group); remotes.delete(id); }
   if (Game.state === 'playing') {
     // if everyone left, end
     if (Net.isHost && Net.ids().length <= 1) endGame(true, 'Everyone left');
-  } else if (Net.isHost) {
-    const n = Net.ids().length;
-    $('btnStart').disabled = n < 2;
-    $('btnStart').textContent = `START GAME (${n}/3)`;
-    $('netStatus').textContent = n < 2 ? 'Waiting for players…' : `${n - 1} player(s) in room`;
+  } else if (Net.isHost && !$('roomCodeBox').classList.contains('hidden')) {
+    updateLobbyCount();
   }
 });
 function endGameNet(m) {
@@ -1382,7 +1388,10 @@ function loop() {
       const rt = Game.role === 'sniper' ? 4000 : 6000;
       if (now - player.lastShot > rt) { player.ammo = player.maxAmmo; updateAmmoHUD(); }
     }
-    // 1v1: nothing else
+    // 1v1: reload the single shell after a delay
+    if (Game.mode === '1v1' && player.ammo < player.maxAmmo && now - player.lastShot > 2500) {
+      player.ammo = player.maxAmmo; updateAmmoHUD(); AudioSys.reload();
+    }
 
     for (let i = tracers.length - 1; i >= 0; i--) {
       const t = tracers[i]; t.life -= dt;
@@ -1425,46 +1434,75 @@ let offMode = '1v1', offTime = 60, offDiff = 'medium';
 
 $('btnOnline').onclick = () => { AudioSys.ui(); $('menuMain').classList.add('hidden'); $('menuOnline').classList.remove('hidden'); };
 $('btnOffline').onclick = () => { AudioSys.ui(); $('menuMain').classList.add('hidden'); $('menuOffline').classList.remove('hidden'); };
-$('btnMenuBack').onclick = () => { AudioSys.ui(); $('menuOnline').classList.add('hidden'); $('menuMain').classList.remove('hidden'); $('netStatus').textContent = ''; };
+$('btnMenuBack').onclick = () => { AudioSys.ui(); resetOnlineUI(); $('menuOnline').classList.add('hidden'); $('menuMain').classList.remove('hidden'); };
 $('btnOfflineBack').onclick = () => { AudioSys.ui(); $('menuOffline').classList.add('hidden'); $('menuMain').classList.remove('hidden'); };
 $('btnAgain').onclick = () => { AudioSys.ui(); backToMenu(); };
 $('btnQuit').onclick = () => { AudioSys.ui(); backToMenu(); };
 
-$('btnHost').onclick = async () => {
+// ---- online lobby tabs (host / join, chess-style) ----
+function showOnlineTab(which) {
   AudioSys.ui();
+  const host = which === 'host';
+  $('tabHost').classList.toggle('selected', host);
+  $('tabJoin').classList.toggle('selected', !host);
+  $('hostPane').classList.toggle('hidden', !host);
+  $('joinPane').classList.toggle('hidden', host);
+}
+$('tabHost').onclick = () => showOnlineTab('host');
+$('tabJoin').onclick = () => showOnlineTab('join');
+
+// teardown any live session and reset the lobby UI
+function resetOnlineUI() {
+  try { Net.destroy(); } catch (e) {}
+  Game.online = false;
+  $('roomCodeBox').classList.add('hidden');
+  $('btnCreateRoom').disabled = false;
+  $('btnJoinGo').disabled = false;
+  $('joinWait').style.display = 'none';
+  $('netStatus').textContent = '';
+}
+
+$('btnCreateRoom').onclick = async () => {
+  AudioSys.ui();
+  resetOnlineUI();
+  $('btnCreateRoom').disabled = true;
   $('netStatus').textContent = 'creating room…';
-  $('hostSetup').classList.remove('hidden');
   try {
-    const code = await Net.host();
+    let code = null, lastErr = null;
+    for (let attempt = 0; attempt < 3 && !code; attempt++) {
+      try { code = await Net.host(); }
+      catch (e) { lastErr = e; if (!/taken/i.test(e.message || '')) break; }
+    }
+    if (!code) throw lastErr || new Error('Could not create room');
     Game.online = true;
     $('roomCode').textContent = code;
-    $('netStatus').textContent = 'Room created — share the code!';
-    $('btnStart').textContent = 'START GAME (1/3)';
-    $('btnStart').disabled = true;
+    $('roomCodeBox').classList.remove('hidden');
+    updateLobbyCount();
+    $('netStatus').textContent = '';
   } catch (e) {
     $('netStatus').textContent = 'Error: ' + (e.message || e);
-    $('hostSetup').classList.add('hidden');
+    $('btnCreateRoom').disabled = false;
   }
 };
 
-$('btnJoin').onclick = () => { AudioSys.ui(); $('joinRow').classList.toggle('hidden'); };
 $('btnJoinGo').onclick = async () => {
   const code = $('joinCode').value;
   if (!code || code.length !== 4) { $('netStatus').textContent = 'Enter the 4-letter code'; return; }
   AudioSys.ui();
-  $('netStatus').textContent = 'connecting…';
-  $('loading').classList.remove('hidden');
+  resetOnlineUI();
+  $('btnJoinGo').disabled = true;
+  $('joinWait').textContent = 'Connecting…';
+  $('joinWait').style.display = '';
+  $('netStatus').textContent = '';
   try {
     await Net.join(code);
     Game.online = true;
-    $('loading').classList.add('hidden');
-    $('netStatus').textContent = 'Connected! Waiting for host to start…';
-    $('hostSetup').classList.add('hidden');
-    $('joinRow').classList.add('hidden');
+    $('joinWait').textContent = 'Connected — waiting for the host to start…';
   } catch (e) {
-    $('loading').classList.add('hidden');
     Game.online = false;
+    $('joinWait').style.display = 'none';
     $('netStatus').textContent = 'Error: ' + (e.message || e);
+    $('btnJoinGo').disabled = false;
   }
 };
 

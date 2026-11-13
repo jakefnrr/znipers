@@ -33,7 +33,7 @@ const Net = {
         p.on('disconnected', () => p.reconnect());
         res(this.code);
       });
-      p.on('error', e => rej(e.type === 'unavailable-id' ? new Error('Room code taken, try again') : e));
+      p.on('error', e => { try { p.destroy(); } catch (_) {} rej(e.type === 'unavailable-id' ? new Error('Room code taken, try again') : e); });
     });
   },
 
@@ -178,8 +178,7 @@ const Net = {
     this.peer = this.conn = null;
     this.conns = new Map(); this.isHost = false; this.code = null;
     this.myId = 0; this._nextId = 1; this.scores = {};
-    this._cbs = {};
+    // keep _cbs: game-level Net.on() handlers are registered once at boot
   }
 };
-
-export default Net;
+window.Net = Net;
