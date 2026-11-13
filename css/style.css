@@ -25,9 +25,11 @@ canvas.game { position:fixed; inset:0; display:block; }
 /* ---------- HUD ---------- */
 #hud { position:fixed; inset:0; pointer-events:none; z-index:20; }
 #hud > * { pointer-events:none; }
-#scoreboard { position:absolute; top:14px; left:18px; font-size:20px; font-weight:800; letter-spacing:1px; background:rgba(10,14,20,.55); padding:8px 16px; border-radius:8px; border:1px solid #ffffff14; }
-#scoreboard .sep { color:#ffc35c; margin:0 8px; }
-#scoreYou { color:#7fd0ff; } #scoreFoe { color:#ff6b6b; }
+#scoreboard { position:absolute; top:14px; left:18px; display:flex; gap:8px; flex-wrap:wrap; max-width:60vw; }
+.score-chip { font-size:16px; font-weight:800; letter-spacing:1px; background:rgba(10,14,20,.55); padding:7px 13px; border-radius:8px; border:1px solid #ffffff14; }
+.score-chip.me { color:#7fd0ff; border-color:#7fd0ff44; }
+.score-chip.foe { color:#ff6b6b; }
+.score-chip.bot { color:#ffb43c; }
 #timer { position:absolute; top:14px; left:50%; transform:translateX(-50%); font-size:26px; font-weight:800; background:rgba(10,14,20,.55); padding:6px 18px; border-radius:8px; font-variant-numeric:tabular-nums; }
 #timer.low { color:#ff5252; animation:pulse 1s infinite; }
 @keyframes pulse { 50% { opacity:.5; } }
