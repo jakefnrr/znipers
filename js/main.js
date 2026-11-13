@@ -463,7 +463,7 @@ const player = {
   pos: new THREE.Vector3(), vel: new THREE.Vector3(),
   yaw: 0, pitch: 0, grounded: false, alive: true,
   ammo: 1, maxAmmo: 1, lastShot: 0, deadTimer: 0,
-  level: 0, respawnCp: 0, adsT: 0,
+  level: 0, respawnCp: 0, respawnPos: null, adsT: 0,
 };
 
 function updatePlayer(dt) {
@@ -725,10 +725,8 @@ function respawnLocal() {
   let sp;
   if (Game.mode === 'rooftop') {
     if (Game.role === 'sniper') sp = spawnPoints[0];
-    else {
-      const cp = checkpoints[player.respawnCp] || checkpoints[0];
-      sp = { pos: cp.pos.clone(), yaw: Math.PI / 2 };
-    }
+    else if (player.respawnPos) sp = { pos: player.respawnPos.clone(), yaw: Math.PI / 2 };
+    else sp = spawnPoints[Math.min(Game.myId || 1, spawnPoints.length - 1)] || spawnPoints[1];
   } else {
     sp = spawnPoints[Game.online ? (Game.myId % spawnPoints.length) : 0] || spawnPoints[0];
   }
@@ -1090,7 +1088,8 @@ function updateRooftopPlayer() {
   // level from height
   const lvl = Math.max(0, Math.min(5, Math.floor((player.pos.y - 0.5) / 3)));
   if (lvl > player.level) {
-    player.level = lvl; player.respawnCp = lvl - 1;
+    player.level = lvl;
+    if (lvl >= 1 && lvl <= 5) player.respawnPos = checkpoints[lvl - 1].pos.clone();
     $('levelTag').textContent = `LEVEL ${lvl} / 5 — reach the roof!`;
     if (lvl < 5) AudioSys.ui();
     if (Game.online) Net.send({ t: 'cp', level: lvl });
@@ -1140,6 +1139,7 @@ function startGame(mode, time, role) {
   player.maxAmmo = mode === '1v1' ? 1 : (Game.role === 'sniper' ? 3 : 1);
   player.ammo = player.maxAmmo;
   player.level = 0; player.respawnCp = 0;
+  player.respawnPos = null;
   respawnLocal();
 
   $('menu').classList.add('hidden');
