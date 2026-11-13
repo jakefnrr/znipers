@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import Net from './net.js';
 
+window.__err = [];
+addEventListener('error', e => window.__err.push(String(e.message || e.error)));
+addEventListener('unhandledrejection', e => window.__err.push('rej:' + String(e.reason && e.reason.message || e.reason)));
+
 // ============================================================
 // ZNIPERS — sniper game (Three.js + PeerJS, up to 3 players)
 // ============================================================
@@ -1463,6 +1467,7 @@ Net.on('kill', ({ killer }) => {
 Net.on('youDied', () => { if (Game.mode === 'rooftop') knockLocal(); else killLocal(); });
 
 // boot
+window.__znipers = { Game, player, bots, remotes, Net, Input };
 buildArena(); // menu backdrop
 buildViewmodel();
 Input.init(renderer.domElement);
