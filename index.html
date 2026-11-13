@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ZNIPERS — Sniper Royale</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+<!-- ============ MAIN MENU / LOBBY ============ -->
+<div id="menu" class="screen">
+  <div class="menu-box">
+    <h1 class="logo">Z<span>NI</span>PERS</h1>
+    <p class="tagline">one shot. one chance.</p>
+
+    <div id="menuMain">
+      <button id="btnOnline" class="big-btn">PLAY ONLINE</button>
+      <button id="btnBot" class="big-btn ghost">PRACTICE vs BOT</button>
+    </div>
+
+    <div id="menuOnline" class="hidden">
+      <div class="row">
+        <button id="btnHost" class="mid-btn">HOST GAME</button>
+        <button id="btnJoin" class="mid-btn">JOIN GAME</button>
+      </div>
+      <div id="joinRow" class="row hidden">
+        <input id="joinCode" maxlength="4" placeholder="CODE" autocomplete="off">
+        <button id="btnJoinGo" class="mid-btn">CONNECT</button>
+      </div>
+      <div id="hostSetup" class="hidden">
+        <p class="label">MODE</p>
+        <div class="row">
+          <button id="mode1v1" class="mid-btn mode-btn selected">1v1 DUEL</button>
+          <button id="modeRooftop" class="mid-btn mode-btn">ROOFTOP</button>
+        </div>
+        <p class="label" id="timeLabel">TIME LIMIT</p>
+        <div class="row" id="timeRow">
+          <button id="time60" class="mid-btn time-btn selected">1 MIN</button>
+          <button id="time120" class="mid-btn time-btn">2 MIN</button>
+        </div>
+        <p class="hint" id="hostHint">Room code: <b id="roomCode">----</b> — share it, waiting for player…</p>
+        <button id="btnStart" class="big-btn" disabled>START GAME</button>
+      </div>
+      <p id="netStatus" class="status"></p>
+      <button id="btnMenuBack" class="link-btn">← back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="scoreboard">
+    <span id="scoreYou">YOU 0</span><span class="sep">—</span><span id="scoreFoe">0 FOE</span>
+  </div>
+  <div id="timer" class="hidden">1:00</div>
+  <div id="ammo"><span id="bulletIcon"></span><span id="ammoText">1 / 1</span></div>
+  <div id="levelTag" class="hidden"></div>
+  <div id="crosshair"><i class="c t"></i><i class="c b"></i><i class="c l"></i><i class="c r"></i><i class="dot"></i></div>
+  <div id="hitmarker">✕</div>
+  <div id="killfeed"></div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="interactHint" class="hidden"></div>
+  <div id="scopeOverlay" class="hidden"><div class="scope-shade"></div><div class="scope-cross-v"></div><div class="scope-cross-h"></div></div>
+  <div id="damageFlash"></div>
+
+  <!-- mobile controls -->
+  <div id="touchUI" class="hidden">
+    <div id="joyZone"><div id="joyBase"><div id="joyKnob"></div></div></div>
+    <button id="btnAds" class="touch-btn"><img src="assets/btn_ads.png" alt="ADS"></button>
+    <button id="btnShoot" class="touch-btn"><img src="assets/btn_shoot.png" alt="SHOOT"></button>
+    <button id="btnJump" class="touch-btn"><img src="assets/btn_jump.png" alt="JUMP"></button>
+  </div>
+</div>
+
+<!-- ============ END / INFO SCREEN ============ -->
+<div id="endScreen" class="screen hidden">
+  <div class="menu-box">
+    <h1 id="endTitle">VICTORY</h1>
+    <p id="endSub"></p>
+    <button id="btnAgain" class="big-btn">PLAY AGAIN</button>
+    <button id="btnQuit" class="link-btn">← main menu</button>
+  </div>
+</div>
+
+<div id="loading" class="hidden"><div class="spinner"></div><p id="loadingText">connecting…</p></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
