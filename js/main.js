@@ -267,37 +267,15 @@ function clearWorld() {
 function buildArena() {
   clearWorld();
   groundPlane(140, 0x555f4e);
-  const B = 26, H = 22;
-  addBox(B, H, 6, 0, 0, -55, MAT.wallDark);
-  addBox(B, H, 6, 0, 0, 55, MAT.wallDark);
-  addBox(6, H, B, -55, 0, 0, MAT.wallDark);
-  addBox(6, H, B, 55, 0, 0, MAT.wallDark);
+  // big wall around the whole map — can't leave
+  const WL = 128, WH = 26, WT = 4;
+  addBox(WL, WH, WT, 0, 0, -66, MAT.wallDark);
+  addBox(WL, WH, WT, 0, 0, 66, MAT.wallDark);
+  addBox(WT, WH, WL, -66, 0, 0, MAT.wallDark);
+  addBox(WT, WH, WL, 66, 0, 0, MAT.wallDark);
+  // just 2 buildings for cover — clean, fast fights
   addBox(16, 12, 16, -22, 0, -18, MAT.wall);
   addBox(16, 12, 16, 22, 0, 18, MAT.wall);
-  addBox(12, 8, 12, -24, 0, 20, MAT.concrete);
-  addBox(12, 8, 12, 24, 0, -20, MAT.concrete);
-  addBox(10, 16, 10, 0, 0, -30, MAT.wall);
-  addBox(10, 16, 10, 0, 0, 30, MAT.wall);
-  addBox(8, 1.4, 1, -10, 0, 0, MAT.crate);
-  addBox(8, 1.4, 1, 10, 0, 2, MAT.crate);
-  addBox(1, 1.4, 8, 0, 0, -8, MAT.crate);
-  addBox(1, 1.4, 8, 2, 0, 10, MAT.crate);
-  addBox(2.2, 2.2, 2.2, -6, 0, 14, MAT.crate);
-  addBox(2.2, 2.2, 2.2, 7, 0, -14, MAT.crate);
-  addBox(2.2, 2.2, 2.2, -14, 0, -4, MAT.crate);
-  addBox(2.2, 2.2, 2.2, 15, 0, 6, MAT.crate);
-  addBox(6, 1.1, 1, 18, 0, -6, MAT.wallDark);
-  addBox(6, 1.1, 1, -18, 0, 6, MAT.wallDark);
-  for (let i = 0; i < 14; i++) {
-    const a = i / 14 * Math.PI * 2, r = 38 + (i % 3) * 6;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (Math.abs(x) < 34 && Math.abs(z) < 34) {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 3, 6), MAT.crate);
-      trunk.position.set(x, 1.5, z); trunk.castShadow = true; mapGroup.add(trunk);
-      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 0), new THREE.MeshStandardMaterial({ color: 0x3f6b35, roughness: 1, flatShading: true }));
-      leaf.position.set(x, 4.2, z); leaf.castShadow = true; mapGroup.add(leaf);
-    }
-  }
   spawnPoints = [
     { pos: new THREE.Vector3(-30, 0, -30), yaw: Math.PI * 0.25 },
     { pos: new THREE.Vector3(30, 0, 30), yaw: -Math.PI * 0.75 },
@@ -307,7 +285,7 @@ function buildArena() {
 
 // ============ MAP 2: ROOFTOP ============
 // Runner building: 18x18, floor height 3, 5 levels. West 3m strip is an
-// open stairwell; switchback stairs climb it. Sniper tower 95m west.
+// open stairwell; switchback stairs climb it. Sniper tower ~50m west.
 function buildRooftop() {
   clearWorld();
   groundPlane(320, 0x3d4a42);
@@ -319,8 +297,8 @@ function buildRooftop() {
   const slabCX = slabX0 + slabW / 2;
   stairStrip = { x0: xw + 1, x1: slabX0, z0: -D / 2, z1: D / 2 };
 
-  // ---------- SNIPER TOWER ----------
-  const TX = -95;
+  // ---------- SNIPER TOWER (closer, ~45m away) ----------
+  const TX = -50;
   addBox(26, 4, 26, TX, 0, 0, MAT.concrete);
   addBox(18, 26, 18, TX, 4, 0, MAT.wall);
   addBox(24, 1.2, 24, TX, 30, 0, MAT.roof);
@@ -418,15 +396,6 @@ function buildRooftop() {
   ramp(zA, zB, 0.5, 6.5, IX, 3, true);   // F0: ground → lvl2
   ramp(zB, zA, 6.5, 12.5);               // F1: lvl2 → lvl4
   ramp(zA, zB, 12.5, roofY);             // F2: lvl4 → roof
-
-  // ---------- city filler ----------
-  for (let i = 0; i < 12; i++) {
-    const x = -60 + ((i * 37) % 170) - 45, z = -95 + ((i * 53) % 190);
-    if (Math.abs(x - BX) < 24 && Math.abs(z) < 24) continue;
-    if (Math.abs(x - TX) < 24 && Math.abs(z) < 24) continue;
-    const h = 8 + (i % 4) * 6;
-    addBox(14 + (i % 3) * 4, h, 14 + (i % 2) * 5, x, 0, z, i % 2 ? MAT.wallDark : MAT.wall);
-  }
 }
 
 // ---------------- PHYSICS (shared by player & bots) ----------------
@@ -589,6 +558,7 @@ function makeAvatar(label) {
   const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.9, 0.9), new THREE.MeshBasicMaterial({ visible: false }));
   hit.position.y = 0.95; hit.userData.isPlayer = true;
   g.add(body, head, legL, legR, gun, hit);
+  g.scale.setScalar(3.0); // big chunky players
   scene.add(g);
   return {
     id: label, group: g, hit,
@@ -770,7 +740,8 @@ function respawnLocal() {
     else if (player.respawnPos) sp = { pos: player.respawnPos.clone(), yaw: Math.PI / 2 };
     else sp = spawnPoints[Math.min(Game.myId || 1, spawnPoints.length - 1)] || spawnPoints[1];
   } else {
-    sp = spawnPoints[Game.online ? (Game.myId % spawnPoints.length) : 0] || spawnPoints[0];
+    // random spawn point on the map
+    sp = spawnPoints[(Math.random() * spawnPoints.length) | 0] || spawnPoints[0];
   }
   player.pos.copy(sp.pos); player.pos.y += 0.1;
   player.vel.set(0, 0, 0);
@@ -910,7 +881,7 @@ function botRespawn(b) {
     sp = spawnPoints[Math.min(idx, spawnPoints.length - 1)];
     b.ai.wp = 0;
   } else {
-    sp = spawnPoints[1 + bots.indexOf(b)] || spawnPoints[1] || spawnPoints[0];
+    sp = spawnPoints[(Math.random() * spawnPoints.length) | 0] || spawnPoints[0];
   }
   b.pos.copy(sp.pos); b.pos.y += 0.1;
   b.vel.set(0, 0, 0); b.yaw = sp.yaw; b.alive = true;
@@ -1065,11 +1036,14 @@ function updateBotFfa(b, dt, now) {
       botRespawn(b);
     }
   }
+
+  // bot reloads its bolt-action (chuchu) so it keeps shooting back
+  if (ai.ammo <= 0 && now - ai.lastShot > 1400 + (4.6 - d.speed) * 900) ai.ammo = 1;
 }
 let _pp = null;
 function playerProxy() {
-  if (!_pp) { _pp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.9, 0.9), new THREE.MeshBasicMaterial({ visible: false })); _pp.userData.isPlayer = true; }
-  _pp.position.set(player.pos.x, player.pos.y + 0.95, player.pos.z);
+  if (!_pp) { _pp = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.4, 1.7), new THREE.MeshBasicMaterial({ visible: false })); _pp.userData.isPlayer = true; }
+  _pp.position.set(player.pos.x, player.pos.y + 1.7, player.pos.z);
   if (!_pp.parent) scene.add(_pp);
   return _pp;
 }
@@ -1181,11 +1155,12 @@ function startGame(mode, time, role) {
 
   // spawn entities
   if (Game.online) {
-    // ensure remote avatars for known ids
-    for (const id of Net.ids()) if (id !== Game.myId && id !== 0) {
+    // ensure remote avatars for known ids (clients also see the host, id 0)
+    for (const id of Net.ids()) {
+      if (id === Game.myId) continue;
+      if (Net.isHost && id === 0) continue;
       if (!remotes.has(id)) remotes.set(id, makeAvatar(id));
     }
-    if (Net.isHost) for (const id of Net.ids()) if (id !== 0 && !remotes.has(id)) remotes.set(id, makeAvatar(id));
   } else {
     // offline: player is always the sniper in rooftop, else ffa
     if (mode === 'rooftop') {
@@ -1384,14 +1359,10 @@ function loop() {
       $('timer').textContent = fmtTime(Game.timeLeft);
       $('timer').classList.toggle('low', Game.timeLeft < 10);
     }
-    // rooftop ammo regen: sniper 3 shells / 4s, runners 1 shell / 6s
-    if (Game.mode === 'rooftop' && player.ammo < player.maxAmmo) {
-      const rt = Game.role === 'sniper' ? 4000 : 6000;
-      if (now - player.lastShot > rt) { player.ammo = player.maxAmmo; updateAmmoHUD(); }
-    }
-    // 1v1: reload the single shell after a delay
-    if (Game.mode === '1v1' && player.ammo < player.maxAmmo && now - player.lastShot > 2500) {
-      player.ammo = player.maxAmmo; updateAmmoHUD(); AudioSys.reload();
+    // fast reload: pew → chuchu (sniper rifle cycles quickly)
+    if (player.ammo < player.maxAmmo) {
+      const rt = Game.mode === '1v1' ? 700 : (Game.role === 'sniper' ? 1100 : 1600);
+      if (now - player.lastShot > rt) { player.ammo = player.maxAmmo; updateAmmoHUD(); AudioSys.reload(); }
     }
 
     for (let i = tracers.length - 1; i >= 0; i--) {
