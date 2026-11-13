@@ -68,10 +68,12 @@ const Net = {
       case 'cp':       // runner checkpoint
         this._broadcast({ t: 'cp', from, level: m.level });
         break;
-      case 'reached':  // runner hit the roof
-        this._broadcast({ t: 'end', winner: 'sniper', reason: 'A runner reached the roof', by: from });
-        this.emit('msg', { t: 'end', winner: 'sniper', reason: 'A runner reached the roof', by: from }); // host too
+      case 'reached': { // a runner made it to the roof — that runner wins the round
+        const reason = 'A runner reached the roof';
+        this._broadcast({ t: 'end', winner: from, reason });
+        this.emit('msg', { t: 'end', winner: from, reason }); // host too
         break;
+      }
       case 'hitclaim': // (unused, kept for compat)
         break;
       default:

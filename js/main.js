@@ -807,16 +807,15 @@ Net.on('peerleft', ({ id }) => {
   }
 });
 function endGameNet(m) {
-  // winner: 'sniper' | 'runner' (rooftop) or null (1v1 uses scores, no round end)
-  if (Game.mode === 'rooftop') {
-    const iWon = (Game.role === 'sniper') === (m.winner === 'sniper');
-    endGame(iWon, m.reason || '');
-    // score the round for winner side
-    if (Net.isHost) {
-      if (m.winner === 'sniper') Net.addScore(0);
-      else { for (const id of Net.ids()) if (id !== 0) Net.addScore(id); }
-      Net.broadcastScores();
-    }
+  if (Game.mode !== 'rooftop') return;
+  const winnerId = m.winner === 'sniper' ? 0 : m.winner;
+  const iWon = Game.myId === winnerId;
+  const wasPlaying = Game.state === 'playing';
+  endGame(iWon, m.reason || '');
+  // host scores the round for the winner
+  if (Net.isHost && wasPlaying && winnerId != null) {
+    Net.addScore(winnerId);
+    syncHostScores();
   }
 }
 
@@ -1039,14 +1038,14 @@ function updateBotRunner(b, dt, now) {
   const hd = Math.hypot(dx, dz);
   if (hd < 1.4 && Math.abs(dy) < 1.2) {
     ai.wp = Math.min(ai.wp + 1, BOT_WAYPOINTS.length - 1);
-    // reached roof center → round over (player is the sniper → sniper wins)
+    // reached roof center → that runner wins the round (sniper loses)
     if (ai.wp >= BOT_WAYPOINTS.length - 1 && Math.abs(b.pos.y - 15.5) < 0.8) {
       if (Game.online) Net.send({ t: 'reached' });
-      else endGame(true, 'A runner reached the roof — you win');
+      else endGame(false, 'A runner reached the roof — you lose');
     }
   }
   // difficulty pause (hesitation)
-  if (ai.pauseT > 0) { ai.pauseT -= dt; return; }
+  if (ai.pauseT > 0) { ai.pauseT -= dt; ai.mx = 0; ai.mz = 0; return; }
   if (Math.random() < dt * d.pause * 0.4) ai.pauseT = 0.4 + Math.random() * 0.8;
 
   const w = BOT_WAYPOINTS[Math.min(ai.wp, BOT_WAYPOINTS.length - 1)];
@@ -1101,7 +1100,7 @@ function updateRooftopPlayer() {
   // reached roof?
   if (player.pos.y > 15.3 && player.pos.x > -9 && player.pos.x < 9 && Math.abs(player.pos.z) < 9) {
     if (Game.online) Net.send({ t: 'reached' });
-    endGame(false, 'You reached the roof — you lose');
+    endGame(true, 'You reached the roof — you win');
     player.alive = false;
   }
 }
@@ -1157,22 +1156,45 @@ function startGame(mode, time, role) {
   renderScores();
   document.exitPointerLock && document.exitPointerLock();
 
+  // prefill scoreboard
+  if (Game.online) {
+    if (Net.isHost) {
+      Net.scores = {};
+      for (const id of Net.ids()) Net.scores[id] = 0;
+      Net.broadcastScores();
+      Game.scores = { ...Net.scores };
+    } else {
+      Game.scores = {};
+      for (const id of Net.ids()) Game.scores[id] = 0;
+      Game.scores[Game.myId] = Game.scores[Game.myId] || 0;
+    }
+  } else {
+    Game.scores = { me: 0 };
+    for (const b of bots) Game.scores[b.id] = 0;
+  }
+
   if (hostTimerInt) clearInterval(hostTimerInt);
-  if (mode === 'rooftop' && Net.isHost) {
-    hostTimerInt = setInterval(() => {
-      Game.timeLeft -= 0.5;
-      Net.send({ t: 'time', left: Game.timeLeft });
-      if (Game.timeLeft <= 0) {
-        clearInterval(hostTimerInt); hostTimerInt = null;
-        Net.send({ t: 'end', winner: 'runner', reason: 'Time ran out — the runners win' });
-        Net._broadcast({ t: 'scores', scores: { ...Net.scores } });
-        for (const id of Net.ids()) if (id !== 0) Net.addScore(id);
-        Net.addScore(0); // no—sniper loses; don't score. fix below
-        Net.scores[0] = Net.scores[0] || 0;
-        Net.broadcastScores();
-        endGame(Game.role === 'runner', 'Time ran out — the runners win');
-      }
-    }, 500);
+  hostTimerInt = null;
+  if (mode === 'rooftop') {
+    const isAuthority = Game.online ? Net.isHost : true;
+    if (isAuthority) {
+      hostTimerInt = setInterval(() => {
+        Game.timeLeft -= 0.5;
+        if (Game.online) Net.send({ t: 'time', left: Game.timeLeft });
+        if (Game.timeLeft <= 0) {
+          clearInterval(hostTimerInt); hostTimerInt = null;
+          const reason = 'Time ran out — the sniper wins';
+          if (Game.online) {
+            Net.send({ t: 'end', winner: 0, reason });
+            Net.addScore(0);
+            syncHostScores();
+          } else {
+            addScore('me');
+          }
+          endGame(Game.role === 'sniper', reason);
+        }
+      }, 500);
+    }
   }
 
   Game.state = 'playing';
@@ -1276,7 +1298,7 @@ function updateCamera(dt) {
 let stateTimer = 0;
 function sendState() {
   Net.send({
-    t: 'state',
+    t: 'state', from: Game.myId,
     p: [player.pos.x, player.pos.y, player.pos.z],
     yaw: player.yaw, pit: player.pitch, alive: player.alive,
   });
@@ -1302,9 +1324,10 @@ function loop() {
       $('timer').textContent = fmtTime(Game.timeLeft);
       $('timer').classList.toggle('low', Game.timeLeft < 10);
     }
-    // sniper ammo regen (rooftop)
-    if (Game.mode === 'rooftop' && Game.role === 'sniper' && player.ammo < player.maxAmmo && now - player.lastShot > 4000) {
-      player.ammo = player.maxAmmo; updateAmmoHUD();
+    // rooftop ammo regen: sniper 3 shells / 4s, runners 1 shell / 6s
+    if (Game.mode === 'rooftop' && player.ammo < player.maxAmmo) {
+      const rt = Game.role === 'sniper' ? 4000 : 6000;
+      if (now - player.lastShot > rt) { player.ammo = player.maxAmmo; updateAmmoHUD(); }
     }
     // 1v1: nothing else
 
@@ -1325,10 +1348,8 @@ function loop() {
     if (Game.mode === '1v1') drawMinimap(dt);
   } else {
     const t = now / 10000;
-    if (!mapGroup) { // idle orbit around arena-ish center
-      camera.position.set(Math.sin(t) * 40, 16, Math.cos(t) * 40);
-      camera.lookAt(0, 4, 0);
-    }
+    camera.position.set(Math.sin(t) * 40, 16, Math.cos(t) * 40);
+    camera.lookAt(0, 4, 0);
   }
   renderer.render(scene, camera);
 }
