@@ -70,13 +70,13 @@ canvas.game { position:fixed; inset:0; display:block; }
 /* ---------- mobile touch UI ---------- */
 #touchUI { position:absolute; inset:0; }
 #touchUI button { pointer-events:auto; }
-#joyZone { position:absolute; left:0; bottom:0; width:45%; height:55%; }
+#joyZone { position:absolute; left:0; bottom:0; width:52%; height:64%; }
 #joyBase { position:absolute; width:110px; height:110px; border-radius:50%; border:2px solid #ffffff33; background:rgba(255,255,255,.06); display:none; }
 #joyKnob { position:absolute; width:48px; height:48px; border-radius:50%; background:rgba(255,195,92,.45); border:2px solid #ffc35c; left:31px; top:31px; }
 .touch-btn { position:absolute; border:none; background:none; cursor:pointer; }
 .touch-btn img { width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
 #btnAds { right:26px; bottom:120px; width:110px; height:110px; }
-#btnShoot { right:150px; bottom:40px; width:130px; height:130px; }
+#btnShoot { left:16px; top:70px; width:120px; height:120px; right:auto; bottom:auto; }
 #btnJump { right:36px; bottom:30px; width:96px; height:96px; }
 .touch-btn:active img { transform:scale(.92); filter:brightness(1.3) drop-shadow(0 4px 10px rgba(0,0,0,.6)); }
 .touch-btn img { transition:transform .08s, filter .08s; }
@@ -99,3 +99,15 @@ canvas.game { position:fixed; inset:0; display:block; }
 .pcount.full { color:#7CFC9A; }
 #menuOnline #joinCode { width:100%; box-sizing:border-box; padding:12px; margin-bottom:12px; font-size:20px; text-align:center; letter-spacing:6px; text-transform:uppercase; background:#10151f; border:1px solid #2c3547; border-radius:8px; color:#ffc35c; outline:none; }
 #errbox { position:fixed; left:8px; bottom:8px; z-index:99; max-width:70vw; color:#ff8080; font:12px monospace; background:#000a; padding:6px 8px; border-radius:6px; white-space:pre-wrap; }
+
+/* settings */
+#sensRange { accent-color:#ffc35c; margin:8px 0 2px; }
+.bind-row { display:flex; justify-content:space-between; align-items:center; padding:11px 14px; margin:6px 0; background:#1b2230; border:1px solid #2c3547; border-radius:8px; cursor:pointer; user-select:none; }
+.bind-row:hover { border-color:#ffc35c; }
+.bind-row .blabel { font-size:13px; letter-spacing:1px; color:#cfd6df; }
+.bind-row .bkey { color:#ffc35c; font-weight:700; letter-spacing:1px; min-width:70px; text-align:right; }
+.bind-row.listening { border-color:#7fd0ff; box-shadow:0 0 12px rgba(127,208,255,.25); }
+.bind-row.listening .bkey { color:#7fd0ff; animation:blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity:.35; } }
+.touch-btn.editing img { outline:3px solid #7fd0ff; border-radius:12px; }
+.touch-btn.editing { cursor:grab; }

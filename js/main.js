@@ -9,6 +9,31 @@ function pushErr(s) {
 addEventListener('error', e => pushErr(String(e.message || e.error)));
 addEventListener('unhandledrejection', e => pushErr('rej:' + String(e.reason && e.reason.message || e.reason)));
 
+// ---------------- SETTINGS (persisted in localStorage) ----------------
+const CFG_KEY = 'znipers_cfg';
+const CFG = (() => {
+  const def = {
+    sens: 1,
+    binds: { fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', ads: 'MouseR', shoot: 'MouseL' },
+    btns: {},
+  };
+  try {
+    const s = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
+    return {
+      sens: typeof s.sens === 'number' ? s.sens : 1,
+      binds: { ...def.binds, ...(s.binds || {}) },
+      btns: s.btns || {},
+    };
+  } catch (e) { return def; }
+})();
+let layoutEditing = false;
+function saveCFG() { try { localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); } catch (e) {} }
+function bindName(code) {
+  if (!code) return '—';
+  if (code.startsWith('Mouse')) return { Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB' }[code] || code;
+  return code.replace('Key', '').replace('Digit', '').replace('Numpad', 'Num ');
+}
+
 // ============================================================
 // ZNIPERS — sniper game (Three.js + PeerJS, up to 3 players)
 // ============================================================
@@ -103,14 +128,18 @@ const Input = {
   init(canvas) {
     addEventListener('keydown', e => {
       this.keys[e.code] = true;
-      if (e.code === 'Space') { this.jumpQueued = true; e.preventDefault(); }
+      const b = CFG.binds;
+      if (e.code === b.jump) { this.jumpQueued = true; e.preventDefault(); }
+      if (!e.repeat && e.code === b.shoot && !b.shoot.startsWith('Mouse')) this.shootQueued = true;
+      if (!e.repeat && e.code === b.ads && !b.ads.startsWith('Mouse')) this.toggleAds();
     });
     addEventListener('keyup', e => { this.keys[e.code] = false; });
     addEventListener('blur', () => { this.keys = {}; });
     addEventListener('mousemove', e => {
       if (document.pointerLockElement !== canvas) return;
-      this.yaw -= e.movementX * 0.0021;
-      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * 0.0021));
+      const s = 0.0021 * CFG.sens;
+      this.yaw -= e.movementX * s;
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s));
     });
     canvas.addEventListener('click', () => {
       if (Game.state === 'playing' && !isTouch && document.pointerLockElement !== canvas) canvas.requestPointerLock();
@@ -118,8 +147,9 @@ const Input = {
     addEventListener('contextmenu', e => e.preventDefault());
     addEventListener('mousedown', e => {
       if (Game.state !== 'playing' || isTouch) return;
-      if (e.button === 2) this.toggleAds();
-      if (e.button === 0) this.shootQueued = true;
+      const mb = 'Mouse' + e.button;
+      if (mb === CFG.binds.ads) this.toggleAds();
+      if (mb === CFG.binds.shoot) this.shootQueued = true;
     });
     this.initTouch();
   },
@@ -134,9 +164,9 @@ const Input = {
       for (const t of e.changedTouches) {
         if (t.target.closest('.touch-btn')) continue;
         const x = t.clientX, y = t.clientY;
-        if (x > innerWidth * 0.42 && this.lookTouchId === null) {
+        if (x > innerWidth * 0.48 && this.lookTouchId === null) {
           this.lookTouchId = t.identifier; this.lookLast = { x, y };
-        } else if (this.lookTouchId === null && x <= innerWidth * 0.42 && joyId === null) {
+        } else if (this.lookTouchId === null && x <= innerWidth * 0.48 && joyId === null) {
           joyId = t.identifier; joyCX = x; joyCY = y;
           base.style.display = 'block';
           base.style.left = (x - 55) + 'px'; base.style.top = (y - 55) + 'px';
@@ -151,8 +181,8 @@ const Input = {
         if (t.identifier === this.lookTouchId && this.lookLast) {
           const dx = t.clientX - this.lookLast.x, dy = t.clientY - this.lookLast.y;
           this.lookLast = { x: t.clientX, y: t.clientY };
-          this.yaw -= dx * 0.005;
-          this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * 0.005));
+          this.yaw -= dx * 0.008 * CFG.sens;
+          this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * 0.008 * CFG.sens));
         } else if (t.identifier === joyId) {
           let dx = t.clientX - joyCX, dy = t.clientY - joyCY;
           const max = 55, len = Math.hypot(dx, dy);
@@ -176,8 +206,8 @@ const Input = {
     addEventListener('touchcancel', endTouch);
     const bind = (id, down, up) => {
       const el = $(id);
-      el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
-      if (up) el.addEventListener('touchend', e => { e.preventDefault(); up(); });
+      el.addEventListener('touchstart', e => { if (layoutEditing) return; e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
+      if (up) el.addEventListener('touchend', e => { if (layoutEditing) return; e.preventDefault(); up(); });
     };
     bind('btnAds', () => { this.adsTouch = this.toggleAds(); });
     bind('btnShoot', () => { this.shootQueued = true; });
@@ -284,118 +314,115 @@ function buildArena() {
 }
 
 // ============ MAP 2: ROOFTOP ============
-// Runner building: 18x18, floor height 3, 5 levels. West 3m strip is an
-// open stairwell; switchback stairs climb it. Sniper tower ~50m west.
+// VERY long runner building (~5x): flat deck x-30..20, runners sprint +x,
+// switchback stairs at x8..20 climb 5 flights to the goal tower x20..56.
+// Sniper sits on a tiny tower platform and cannot move.
 function buildRooftop() {
   clearWorld();
-  groundPlane(320, 0x3d4a42);
+  groundPlane(340, 0x3d4a42);
 
-  const BX = 0, W = 18, D = 18, FH = 3;
-  const xw = BX - W / 2;          // west edge = -9 (wall occupies -9..-8)
-  const slabX0 = xw + 4;          // slabs start 4m in → stair strip x∈[-8,-5]
-  const slabW = W - 4;            // 14
-  const slabCX = slabX0 + slabW / 2;
-  stairStrip = { x0: xw + 1, x1: slabX0, z0: -D / 2, z1: D / 2 };
+  // ---------- SNIPER TOWER: tiny platform ----------
+  const TX = -48;
+  addBox(5, 1.5, 5, TX, 0, 0, MAT.concrete);
+  addBox(0.8, 28, 0.8, TX, 1.5, 0, MAT.wallDark);
+  addBox(3.4, 0.5, 3.4, TX, 29.5, 0, MAT.metal);
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.18, 10, 6), MAT.metal);
+  ant.position.set(TX + 1.2, 35, 1.2); ant.castShadow = true; mapGroup.add(ant);
+  spawnPoints.push({ pos: new THREE.Vector3(TX, 30.1, 0), yaw: -Math.PI / 2 }); // id0 = sniper, faces +x
 
-  // ---------- SNIPER TOWER (closer, ~45m away) ----------
-  const TX = -50;
-  addBox(26, 4, 26, TX, 0, 0, MAT.concrete);
-  addBox(18, 26, 18, TX, 4, 0, MAT.wall);
-  addBox(24, 1.2, 24, TX, 30, 0, MAT.roof);
-  addBox(24, 1.1, 1, TX, 31.2, -11.5, MAT.wallDark);
-  addBox(24, 1.1, 1, TX, 31.2, 11.5, MAT.wallDark);
-  addBox(1, 1.1, 24, TX - 11.5, 31.2, 0, MAT.wallDark);
-  addBox(1, 1.1, 24, TX + 11.5, 31.2, 0, MAT.wallDark);
-  addBox(2.5, 1.1, 2.5, TX + 4, 31.2, -4, MAT.dark);
-  addBox(3, 1.5, 3, TX - 5, 31.2, 5, MAT.metal);
-  addBox(2, 1.2, 2, TX + 6, 31.2, 6, MAT.dark);
-  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 14, 6), MAT.metal);
-  ant.position.set(TX - 8, 38, -8); ant.castShadow = true; mapGroup.add(ant);
-  spawnPoints.push({ pos: new THREE.Vector3(TX + 4, 31.2, -4), yaw: Math.PI / 2 }); // id0 = sniper
-
-  // ---------- RUNNER BUILDING ----------
-  // ground floor: full slab + perimeter walls
-  addBox(W, 0.5, D, BX, 0, 0, MAT.concrete);
-  addBox(W, FH, 1, BX, 0.5, -D / 2 + 0.5, MAT.wall);
-  addBox(W, FH, 1, BX, 0.5, D / 2 - 0.5, MAT.wall);
-  addBox(1, FH, D, xw + 0.5, 0.5, 0, MAT.wall);
-  addBox(1, FH, D, BX + W / 2 - 0.5, 0.5, 0, MAT.wall);
-
-  // upper floors lvl1-4: slab covers x>slabX0 only (stair strip stays open)
-  const cpY = [];
-  for (let lvl = 1; lvl <= 4; lvl++) {
-    const fy = 0.5 + lvl * FH;
-    addBox(slabW, 0.4, D, slabCX, fy - 0.4, 0, MAT.concrete);
-    // cover walls on the slab area
-    addBox(6, 1.1, 0.6, BX + 1, fy, -D / 2 + 3, MAT.wallDark);
-    addBox(6, 1.1, 0.6, BX + 1, fy, D / 2 - 3, MAT.wallDark);
-    addBox(0.6, 1.1, 6, BX + W / 2 - 3, fy, 3, MAT.wallDark);
-    addBox(0.6, 1.1, 6, BX + W / 2 - 3, fy, -3, MAT.wallDark);
-    addBox(2, 2.6, 2, BX + (lvl % 2 ? 4 : -1), fy, (lvl % 2 ? 4 : -4), MAT.wall);
-    cpY.push(fy);
+  // ---------- LONG RUNNER BUILDING ----------
+  // flat deck: x -30..20, z -9..9, walking surface y=1
+  addBox(50, 1, 18, -5, 0, 0, MAT.concrete);
+  // low parapets — 1.6 high so nobody jumps off the edge
+  addBox(50, 1.6, 0.5, -5, 1, -8.75, MAT.wallDark);
+  addBox(50, 1.6, 0.5, -5, 1, 8.75, MAT.wallDark);
+  addBox(0.5, 1.6, 18, -30, 1, 0, MAT.wallDark);
+  // goal tower at the far right: x20..56, top y=15.5
+  addBox(36, 1, 18, 38, 14.5, 0, MAT.roof);
+  addBox(36, 0.9, 0.5, 38, 15.5, -8.75, MAT.wallDark);
+  addBox(36, 0.9, 0.5, 38, 15.5, 8.75, MAT.wallDark);
+  addBox(0.5, 0.9, 18, 56, 15.5, 0, MAT.wallDark);
+  // support pillars (visual only)
+  for (const px of [24, 32, 40, 48, 54]) {
+    addBox(1.4, 14.5, 1.4, px, 0, -6.5, MAT.concrete, { collide: false });
+    addBox(1.4, 14.5, 1.4, px, 0, 6.5, MAT.concrete, { collide: false });
   }
-  // roof slab (level 5) — also split, parapet on slab edges
-  const roofY = 0.5 + 5 * FH;
-  addBox(slabW, 0.4, D, slabCX, roofY - 0.4, 0, MAT.roof);
-  addBox(slabW, 1.1, 0.6, slabCX, roofY, -D / 2 + 1, MAT.wallDark);
-  addBox(slabW, 1.1, 0.6, slabCX, roofY, D / 2 - 1, MAT.wallDark);
-  addBox(0.6, 1.1, D, BX + W / 2 - 1, roofY, 0, MAT.wallDark);
-  roofArea = { x0: xw, x1: BX + W / 2, z0: -D / 2, z1: D / 2, y: roofY };
+  roofArea = { x0: 20, x1: 56, z0: -9, z1: 9, y: 15.5 };
 
-  // checkpoints: positions on the stairs/floors in the strip
-  const IX = xw + 2.5; // stair center x = -6.5
-  checkpoints = [
-    { pos: new THREE.Vector3(IX, 3.5, 0), level: 1 },
-    { pos: new THREE.Vector3(IX, 6.5, 7), level: 2 },
-    { pos: new THREE.Vector3(IX, 9.5, 0), level: 3 },
-    { pos: new THREE.Vector3(IX, 12.5, -7), level: 4 },
-    { pos: new THREE.Vector3(IX, 15.5, 7), level: 5 },
+  // ---------- small body-sized cover on the deck (left/center/right) ----------
+  const coverSpots = [
+    [-22, -5.5], [-18, 5.5], [-14, -5.5], [-10, 5.5], [-6, -5.5], [-2, 5.5],
+    [-20, 0], [-12, 0], [-4, 0], [-16, 2.5], [-8, -2.5], [-24, 2],
   ];
-  spawnPoints.push({ pos: new THREE.Vector3(-4, 0.5, 0), yaw: Math.PI / 2 });   // runner A
-  spawnPoints.push({ pos: new THREE.Vector3(-2, 0.5, 5), yaw: Math.PI / 2 });   // runner B
+  coverSpots.forEach(([cx, cz], i) => {
+    addBox(2.4 + (i % 3) * 0.5, 1.1 + (i % 2) * 0.3, 1.3, cx, 1, cz, i % 2 ? MAT.crate : MAT.wallDark);
+  });
 
-  // ---------- STAIRS in the west strip: smooth switchback RAMPS ----------
-  // ramp along z: x center IX, width 3, from (z0,y0) to (z1,y1)
+  // runner spawns at the far left end
+  spawnPoints.push({ pos: new THREE.Vector3(-26, 1.1, -4), yaw: -Math.PI / 2 });  // runner A
+  spawnPoints.push({ pos: new THREE.Vector3(-26, 1.1, 4), yaw: -Math.PI / 2 });   // runner B
+
+  // checkpoints at each flight top
+  checkpoints = [
+    { pos: new THREE.Vector3(20, 4.5, -4), level: 1 },
+    { pos: new THREE.Vector3(8, 7.7, 4), level: 2 },
+    { pos: new THREE.Vector3(20, 10.9, -4), level: 3 },
+    { pos: new THREE.Vector3(8, 14.1, 4), level: 4 },
+    { pos: new THREE.Vector3(20, 15.8, -4), level: 5 },
+  ];
+
+  // ---------- STAIRS: 5 switchback flights in shaft x8..20 ----------
+  // lanes: A = z[-8,0], B = z[0,8]; flights run along +x/-x alternating
   const rampMeshMat = new THREE.MeshStandardMaterial({ color: 0x4a545f, roughness: 0.6, metalness: 0.5 });
-  function ramp(z0, z1, y0, y1, x = IX, w = 3, underside = false) {
-    ramps.push({ x0: x - w / 2, x1: x + w / 2, zA: z0, yA: y0, zB: z1, yB: y1 });
-    // visual wedge — sort by z so rotation is uniform
-    const zLo = Math.min(z0, z1), zHi = Math.max(z0, z1);
-    const yLo = z0 < z1 ? y0 : y1, yHi = z0 < z1 ? y1 : y0;
-    const len = Math.hypot(zHi - zLo, yHi - yLo);
-    const slope = Math.atan2(yHi - yLo, zHi - zLo);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, len + 0.4), rampMeshMat);
-    m.position.set(x, (yLo + yHi) / 2 - 0.15, (zLo + zHi) / 2);
-    m.rotation.x = -slope;
+  function ramp(axis, u0, u1, c0, c1, y0, y1) {
+    // physics record: axis 'x' → coord is x, lateral range is z
+    ramps.push(axis === 'x'
+      ? { axis, u0, u1, cA: c0, yA: y0, cB: c1, yB: y1 }
+      : { axis, u0, u1, cA: c0, yA: y0, cB: c1, yB: y1 });
+    const cLo = Math.min(c0, c1), cHi = Math.max(c0, c1);
+    const yLo = c0 < c1 ? y0 : y1, yHi = c0 < c1 ? y1 : y0;
+    const len = Math.hypot(cHi - cLo, yHi - yLo);
+    const slope = Math.atan2(yHi - yLo, cHi - cLo);
+    const midC = (cLo + cHi) / 2, midY = (yLo + yHi) / 2, midU = (u0 + u1) / 2, w = u1 - u0;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(axis === 'x' ? len + 0.4 : w, 0.3, axis === 'x' ? w : len + 0.4), rampMeshMat);
+    m.position.set(axis === 'x' ? midC : midU, midY - 0.15, axis === 'x' ? midU : midC);
+    if (axis === 'x') m.rotation.z = slope; else m.rotation.x = -slope;
     m.castShadow = m.receiveShadow = true;
     mapGroup.add(m);
     shootables.push(m);
-    // underside blockers (only for the ground-level ramp): cap at head height
-    // so they stop ground-level walkers but never block ramps above
-    if (underside) {
-      const n = Math.ceil(Math.abs(z1 - z0) / 2);
+    // side rails (visual only)
+    for (const s of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(axis === 'x' ? len : 0.15, 0.9, axis === 'x' ? 0.15 : len), MAT.wallDark);
+      rail.position.set(
+        axis === 'x' ? midC : u0 + (s > 0 ? w : 0),
+        midY + 0.3,
+        axis === 'x' ? u0 + (s > 0 ? w : 0) : midC);
+      if (axis === 'x') rail.rotation.z = slope; else rail.rotation.x = -slope;
+      rail.castShadow = true; mapGroup.add(rail);
+    }
+    // underside blockers for the lowest flight so deck runners can't clip their heads
+    if (y0 <= 1.01 && y1 <= 4.3) {
+      const n = Math.ceil(Math.abs(c1 - c0));
       for (let i = 0; i <= n; i++) {
-        const t = i / n, zz = z0 + (z1 - z0) * t, sy = y0 + (y1 - y0) * t;
-        if (sy > 2.6) {
-          colliders.push({
-            min: new THREE.Vector3(x - w / 2, 0.5, zz - 1.2),
-            max: new THREE.Vector3(x + w / 2, 2.35, zz + 1.2),
-          });
+        const t = i / n, cc = c0 + (c1 - c0) * t, sy = y0 + (y1 - y0) * t;
+        if (sy > 2.4) {
+          colliders.push(axis === 'x'
+            ? { min: new THREE.Vector3(cc - 0.6, 1, u0), max: new THREE.Vector3(cc + 0.6, sy - 0.2, u1) }
+            : { min: new THREE.Vector3(u0, 1, cc - 0.6), max: new THREE.Vector3(u1, sy - 0.2, cc + 0.6) });
         }
       }
     }
-    // side rails (visual only)
-    for (const sx of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.9, len), MAT.wallDark);
-      rail.position.set(x + sx * (w / 2 + 0.05), (yLo + yHi) / 2 + 0.3, (zLo + zHi) / 2);
-      rail.rotation.x = -slope;
-      rail.castShadow = true; mapGroup.add(rail);
-    }
   }
-  const zA = -D / 2 + 1.5, zB = D / 2 - 1.5; // -7.5 .. 7.5
-  ramp(zA, zB, 0.5, 6.5, IX, 3, true);   // F0: ground → lvl2
-  ramp(zB, zA, 6.5, 12.5);               // F1: lvl2 → lvl4
-  ramp(zA, zB, 12.5, roofY);             // F2: lvl4 → roof
+  // landings bridging the two lanes at each flight end
+  for (const ly of [4.2, 7.4, 10.6, 13.8]) {
+    addBox(1.6, 0.3, 16, 20.8, ly - 0.3, 0, MAT.concrete);
+    addBox(1.6, 0.3, 16, 7.2, ly - 0.3, 0, MAT.concrete);
+  }
+  ramp('x', -8, 0, 8, 20, 1, 4.2);     // F1 lane A →
+  ramp('x', 0, 8, 20, 8, 4.2, 7.4);    // F2 lane B ←
+  ramp('x', -8, 0, 8, 20, 7.4, 10.6);  // F3 lane A →
+  ramp('x', 0, 8, 20, 8, 10.6, 13.8);  // F4 lane B ←
+  ramp('x', -8, 0, 8, 20, 13.8, 15.5); // F5 lane A → goal
 }
 
 // ---------------- PHYSICS (shared by player & bots) ----------------
@@ -455,8 +482,10 @@ function stepBody(b, wishX, wishZ, jump, dt) {
   if (b.vel.y <= 0.01 && ramps.length) {
     let best = null, bestD = 1e9;
     for (const r of ramps) {
-      if (b.pos.x <= r.x0 || b.pos.x >= r.x1) continue;
-      const t = (b.pos.z - r.zA) / (r.zB - r.zA);
+      const lat = r.axis === 'x' ? b.pos.z : b.pos.x;
+      if (lat <= r.u0 || lat >= r.u1) continue;
+      const c = r.axis === 'x' ? b.pos.x : b.pos.z;
+      const t = (c - r.cA) / (r.cB - r.cA);
       if (t < 0 || t > 1) continue;
       const surf = r.yA + (r.yB - r.yA) * t;
       const d = b.pos.y - surf;
@@ -486,10 +515,11 @@ function updatePlayer(dt) {
     return;
   }
   let fx = 0, fz = 0;
-  if (Input.keys['KeyW']) fz -= 1;
-  if (Input.keys['KeyS']) fz += 1;
-  if (Input.keys['KeyA']) fx -= 1;
-  if (Input.keys['KeyD']) fx += 1;
+  const b = CFG.binds;
+  if (Input.keys[b.fwd]) fz -= 1;
+  if (Input.keys[b.back]) fz += 1;
+  if (Input.keys[b.left]) fx -= 1;
+  if (Input.keys[b.right]) fx += 1;
   if (isTouch) { fx += Input.joyVec.x; fz += Input.joyVec.y; }
   const len = Math.hypot(fx, fz);
   if (len > 1) { fx /= len; fz /= len; }
@@ -1050,14 +1080,19 @@ function playerProxy() {
 
 // ---- Rooftop runner bot: climb the stairwell waypoints ----
 const BOT_WAYPOINTS = [
-  { x: -4,    z: -7,   y: 0.5 },   // inside building, south end
-  { x: -6.5,  z: -6,   y: 1.1 },   // strip entry, low end of ramp F0
-  { x: -6.5,  z: 0,    y: 3.5 },   // mid F0 (lvl1)
-  { x: -6.5,  z: 7.5,  y: 6.5 },   // top F0 (lvl2)
-  { x: -6.5,  z: 0,    y: 9.5 },   // mid F1 (lvl3)
-  { x: -6.5,  z: -7.5, y: 12.5 },  // top F1 (lvl4)
-  { x: -6.5,  z: 7.5,  y: 15.5 },  // top F2 (roof strip)
-  { x: 0,     z: 0,    y: 15.5 },  // roof center → win
+  { x: -22,  y: 1.0,  z: -4 },    // deck, back stretch
+  { x: -6,   y: 1.0,  z: -4 },    // mid deck
+  { x: 8,    y: 1.0,  z: -4 },    // shaft entry, F1 lane A
+  { x: 20,   y: 4.2,  z: -4 },    // F1 top
+  { x: 20.8, y: 4.2,  z: 4 },     // landing → lane B
+  { x: 8,    y: 7.4,  z: 4 },     // F2 top
+  { x: 7.2,  y: 7.4,  z: -4 },    // landing → lane A
+  { x: 20,   y: 10.6, z: -4 },    // F3 top
+  { x: 20.8, y: 10.6, z: 4 },     // landing → lane B
+  { x: 8,    y: 13.8, z: 4 },     // F4 top
+  { x: 7.2,  y: 13.8, z: -4 },    // landing → lane A
+  { x: 20,   y: 15.5, z: -4 },    // F5 top = goal edge
+  { x: 40,   y: 15.5, z: 0 },     // goal center → win
 ];
 function updateBotRunner(b, dt, now) {
   const ai = b.ai, d = b.d;
@@ -1532,6 +1567,112 @@ $('btnStart').onclick = () => {
   startGame(hostMode, hostTime, role);
 };
 
+// ---------------- SETTINGS ----------------
+$('btnSettings').onclick = () => { AudioSys.ui(); $('menuMain').classList.add('hidden'); $('menuSettings').classList.remove('hidden'); };
+$('btnSettingsBack').onclick = () => { AudioSys.ui(); $('menuSettings').classList.add('hidden'); $('menuMain').classList.remove('hidden'); };
+
+function showSetTab(which) {
+  AudioSys.ui();
+  const kb = which === 'kb';
+  $('setTabKb').classList.toggle('selected', kb);
+  $('setTabMob').classList.toggle('selected', !kb);
+  $('setKb').classList.toggle('hidden', !kb);
+  $('setMob').classList.toggle('hidden', kb);
+}
+$('setTabKb').onclick = () => showSetTab('kb');
+$('setTabMob').onclick = () => showSetTab('mob');
+
+// sensitivity
+$('sensRange').value = CFG.sens;
+$('sensVal').textContent = CFG.sens.toFixed(2) + 'x';
+$('sensRange').oninput = e => {
+  CFG.sens = +e.target.value;
+  $('sensVal').textContent = CFG.sens.toFixed(2) + 'x';
+  saveCFG();
+};
+
+// key binds
+const BIND_DEFS = [
+  ['fwd', 'MOVE FORWARD'], ['back', 'MOVE BACK'], ['left', 'MOVE LEFT'], ['right', 'MOVE RIGHT'],
+  ['jump', 'JUMP'], ['ads', 'AIM / ADS'], ['shoot', 'SHOOT'],
+];
+function renderBinds() {
+  const wrap = $('bindRows');
+  wrap.innerHTML = '';
+  for (const [action, label] of BIND_DEFS) {
+    const row = document.createElement('div');
+    row.className = 'bind-row';
+    row.innerHTML = `<span class="blabel">${label}</span><span class="bkey">${bindName(CFG.binds[action])}</span>`;
+    row.onclick = () => startRebind(action, row);
+    wrap.appendChild(row);
+  }
+}
+function startRebind(action, row) {
+  AudioSys.ui();
+  document.querySelectorAll('.bind-row.listening').forEach(r => r.classList.remove('listening'));
+  row.classList.add('listening');
+  row.querySelector('.bkey').textContent = '…';
+  const cleanup = () => {
+    removeEventListener('keydown', kd, true);
+    removeEventListener('mousedown', md, true);
+  };
+  const kd = e => {
+    e.preventDefault(); e.stopPropagation(); cleanup();
+    CFG.binds[action] = e.code; saveCFG(); renderBinds(); AudioSys.ui();
+  };
+  const md = e => {
+    e.preventDefault(); e.stopPropagation(); cleanup();
+    CFG.binds[action] = 'Mouse' + e.button; saveCFG(); renderBinds(); AudioSys.ui();
+  };
+  addEventListener('keydown', kd, true);
+  addEventListener('mousedown', md, true);
+}
+renderBinds();
+
+// mobile button layout editor
+function applyBtnPos() {
+  for (const id of ['btnAds', 'btnShoot', 'btnJump']) {
+    const el = $(id), p = CFG.btns[id];
+    el.style.left = el.style.top = el.style.right = el.style.bottom = '';
+    if (p) {
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      el.style.left = Math.min(p.x, innerWidth - el.offsetWidth) + 'px';
+      el.style.top = Math.min(p.y, innerHeight - el.offsetHeight) + 'px';
+    }
+  }
+}
+$('btnEditLayout').onclick = () => {
+  layoutEditing = !layoutEditing;
+  AudioSys.ui();
+  for (const id of ['btnAds', 'btnShoot', 'btnJump']) $(id).classList.toggle('editing', layoutEditing);
+  $('btnEditLayout').textContent = layoutEditing ? 'DONE' : 'EDIT LAYOUT';
+  $('layoutHint').textContent = layoutEditing ? 'drag the buttons — tap DONE when finished' : '';
+};
+$('btnResetLayout').onclick = () => { CFG.btns = {}; saveCFG(); applyBtnPos(); AudioSys.ui(); };
+let dragEl = null, dragOff = { x: 0, y: 0 };
+document.querySelectorAll('.touch-btn').forEach(el => {
+  el.addEventListener('pointerdown', e => {
+    if (!layoutEditing) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    dragEl = el; dragOff = { x: e.clientX - r.left, y: e.clientY - r.top };
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+});
+addEventListener('pointermove', e => {
+  if (!dragEl) return;
+  const w = dragEl.offsetWidth, h = dragEl.offsetHeight;
+  const x = Math.min(Math.max(0, e.clientX - dragOff.x), innerWidth - w);
+  const y = Math.min(Math.max(0, e.clientY - dragOff.y), innerHeight - h);
+  dragEl.style.right = 'auto'; dragEl.style.bottom = 'auto';
+  dragEl.style.left = x + 'px'; dragEl.style.top = y + 'px';
+});
+addEventListener('pointerup', () => {
+  if (!dragEl) return;
+  CFG.btns[dragEl.id] = { x: parseFloat(dragEl.style.left), y: parseFloat(dragEl.style.top) };
+  saveCFG(); dragEl = null;
+});
+
 // client-originated kills: host scores them (host's own kills go through hostApplyKill)
 Net.on('kill', ({ killer }) => {
   if (!Net.isHost || Game.mode !== '1v1' || Game.state !== 'playing') return;
@@ -1546,5 +1687,6 @@ window.__znipers = { Game, player, bots, remotes, Net, Input };
 buildArena(); // menu backdrop
 buildViewmodel();
 Input.init(renderer.domElement);
+applyBtnPos(); // restore custom mobile button layout
 updateAmmoHUD();
 loop();

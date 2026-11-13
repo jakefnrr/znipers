@@ -20,6 +20,7 @@
     <div id="menuMain">
       <button id="btnOnline" class="big-btn">PLAY ONLINE</button>
       <button id="btnOffline" class="big-btn ghost">PLAY OFFLINE vs BOT</button>
+      <button id="btnSettings" class="big-btn ghost">SETTINGS</button>
     </div>
 
     <div id="menuOffline" class="hidden">
@@ -41,6 +42,30 @@
       </div>
       <button id="btnOfflineStart" class="big-btn">START GAME</button>
       <button id="btnOfflineBack" class="link-btn">← back</button>
+    </div>
+
+    <div id="menuSettings" class="hidden">
+      <div class="row">
+        <button id="setTabKb" class="mid-btn selected">KEYBOARD</button>
+        <button id="setTabMob" class="mid-btn">MOBILE</button>
+      </div>
+
+      <div id="setKb">
+        <p class="label">MOUSE / TOUCH SENSITIVITY</p>
+        <input type="range" id="sensRange" min="0.3" max="2.5" step="0.05" value="1" style="width:100%">
+        <p class="hint" id="sensVal">1.00x</p>
+        <p class="label">KEY BINDS — click a bind, then press a key or mouse button</p>
+        <div id="bindRows"></div>
+      </div>
+
+      <div id="setMob" class="hidden">
+        <p class="hint">Tap <b>EDIT LAYOUT</b>, then drag the ADS / SHOOT / JUMP buttons anywhere you like. Positions save automatically.</p>
+        <button id="btnEditLayout" class="big-btn">EDIT LAYOUT</button>
+        <button id="btnResetLayout" class="mid-btn">RESET LAYOUT</button>
+        <p class="hint" id="layoutHint"></p>
+      </div>
+
+      <button id="btnSettingsBack" class="link-btn">← back</button>
     </div>
 
     <div id="menuOnline" class="hidden">
